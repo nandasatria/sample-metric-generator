@@ -22,6 +22,7 @@ FROM scratch
 # Copy the executable from the builder stage
 COPY --from=builder /app/main /main
 
+COPY .env .env 
 # Expose port 8080 to the outside world
 EXPOSE 8080
 
