@@ -49,6 +49,7 @@ type MetricGenerator struct {
 	esClient      *elasticsearch.Client
 	metricTracker map[string]MetricData
 	esIndex       string
+	rnd           *rand.Rand // Add a local random number generator
 	mu            sync.Mutex
 }
 
@@ -80,7 +81,7 @@ func loadConfiguration() (int, string, string, string, string) {
 	return serverCount, esServer, esUsername, esPassword, esIndex
 }
 
-func generateRandomServers(count int) []ServerConfig {
+func generateRandomServers(count int, rnd *rand.Rand) []ServerConfig {
 	locations := []struct {
 		Country   string
 		City      string
@@ -96,17 +97,17 @@ func generateRandomServers(count int) []ServerConfig {
 
 	servers := make([]ServerConfig, count)
 	for i := 0; i < count; i++ {
-		loc := locations[rand.Intn(len(locations))]
+		loc := locations[rnd.Intn(len(locations))]
 
 		servers[i] = ServerConfig{
 			ID: fmt.Sprintf("server-%03d", i+1),
 			Hostname: fmt.Sprintf("%s-host-%03d",
-				[]string{"web", "db", "app", "cache", "worker"}[rand.Intn(5)],
+				[]string{"web", "db", "app", "cache", "worker"}[rnd.Intn(5)],
 				i+1),
 			IPAddress: fmt.Sprintf("10.%d.%d.%d",
-				rand.Intn(256),
-				rand.Intn(256),
-				rand.Intn(256)),
+				rnd.Intn(256),
+				rnd.Intn(256),
+				rnd.Intn(256)),
 			Location: struct {
 				Country   string
 				City      string
@@ -115,8 +116,8 @@ func generateRandomServers(count int) []ServerConfig {
 			}{
 				Country:   loc.Country,
 				City:      loc.City,
-				Latitude:  loc.Latitude + (rand.Float64()*0.5 - 0.25),
-				Longitude: loc.Longitude + (rand.Float64()*0.5 - 0.25),
+				Latitude:  loc.Latitude + (rnd.Float64()*0.5 - 0.25),
+				Longitude: loc.Longitude + (rnd.Float64()*0.5 - 0.25),
 			},
 		}
 	}
@@ -138,20 +139,20 @@ func (mg *MetricGenerator) generateConsistentServerMetric(server ServerConfig) M
 		diskBase := prevMetric.DiskUsage
 
 		cpuUsage = math.Max(0, math.Min(100,
-			cpuBase+(rand.Float64()*10-5)+
+			cpuBase+(mg.rnd.Float64()*10-5)+
 				math.Sin(float64(time.Now().Unix()/60))*5))
 
 		memoryUsage = math.Max(0, math.Min(100,
-			memBase+(rand.Float64()*8-4)+
+			memBase+(mg.rnd.Float64()*8-4)+
 				math.Cos(float64(time.Now().Unix()/120))*3))
 
 		diskUsage = math.Max(0, math.Min(100,
-			diskBase+(rand.Float64()*6-3)+
+			diskBase+(mg.rnd.Float64()*6-3)+
 				math.Tan(float64(time.Now().Unix()/180))*2))
 	} else {
-		cpuUsage = 10 + rand.Float64()*40
-		memoryUsage = 20 + rand.Float64()*50
-		diskUsage = 5 + rand.Float64()*30
+		cpuUsage = 10 + mg.rnd.Float64()*40
+		memoryUsage = 20 + mg.rnd.Float64()*50
+		diskUsage = 5 + mg.rnd.Float64()*30
 	}
 
 	metric := MetricData{
@@ -214,11 +215,11 @@ func main() {
 	// Load configuration
 	serverCount, esServer, esUsername, esPassword, esIndex := loadConfiguration()
 
-	// Seed random number generator
-	rand.Seed(time.Now().UnixNano())
+	// Create a new random number generator seeded with the current time
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	// Generate random servers
-	servers := generateRandomServers(serverCount)
+	servers := generateRandomServers(serverCount, rnd)
 
 	// Configure Elasticsearch client
 	cfg := elasticsearch.Config{
@@ -238,9 +239,11 @@ func main() {
 		esClient:      esClient,
 		metricTracker: make(map[string]MetricData),
 		esIndex:       esIndex,
+		rnd:           rnd, // Set the local random number generator
 	}
 
 	// Run metric generation
+	// log.Printf("metric: %v\n ", servers)
 	generator.GenerateConsistentMetrics()
 }
 
